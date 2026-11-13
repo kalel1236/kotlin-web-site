@@ -1,6 +1,3 @@
 {
-  "presets": "@jetbrains/jetbrains",
-  "plugins": [
-    "transform-runtime"
-  ]
+  "presets": ["next/babel"]
 }

@@ -1,13 +1,14 @@
 [//]: # (title: Functional \(SAM\) interfaces)
 
-An interface with only one abstract method is called a _functional interface_, or a _Single Abstract
-Method (SAM) interface_. The functional interface can have several non-abstract members but only one abstract member.
+An interface with only one abstract member function is called a _functional interface_, or a _Single Abstract
+Method (SAM) interface_. The functional interface can have several non-abstract member functions but only one abstract 
+member function.
 
 To declare a functional interface in Kotlin, use the `fun` modifier.
 
 ```kotlin
 fun interface KRunnable {
-   fun invoke()
+    fun invoke()
 }
 ```
 
@@ -24,7 +25,7 @@ For example, consider the following Kotlin functional interface:
 
 ```kotlin
 fun interface IntPredicate {
-   fun accept(i: Int): Boolean
+    fun accept(i: Int): Boolean
 }
 ```
 
@@ -33,13 +34,13 @@ If you don't use a SAM conversion, you will need to write code like this:
 ```kotlin
 // Creating an instance of a class
 val isEven = object : IntPredicate {
-   override fun accept(i: Int): Boolean {
-       return i % 2 == 0
-   }
+    override fun accept(i: Int): Boolean {
+        return i % 2 == 0
+    }
 }
 ```
 
-By leveraging Kotlin's SAM conversion, you can write the following equivalent code instead:
+By leveraging Kotlin's SAM conversion, you can write the following code instead:
 
 ```kotlin
 // Creating an instance using lambda
@@ -50,49 +51,121 @@ A short lambda expression replaces all the unnecessary code.
 
 ```kotlin
 fun interface IntPredicate {
-   fun accept(i: Int): Boolean
+    fun accept(i: Int): Boolean
 }
 
 val isEven = IntPredicate { it % 2 == 0 }
 
 fun main() {
-   println("Is 7 even? - ${isEven.accept(7)}")
+    println("Is 7 even? - ${isEven.accept(7)}")
 }
 ```
 {kotlin-runnable="true" kotlin-min-compiler-version="1.4"}
 
-In another example of a SAM conversion, the function `process()` uses a lambda instead of creating an anonymous object:
+Replacing an [object expression](object-declarations.md#object-expressions) with a SAM conversion can change object identity. An object expression creates a new instance 
+each time it's evaluated, while a SAM conversion may create a new instance or reuse an existing one. Therefore:
 
-```kotlin
-fun interface SuspendRunnable {
-   suspend fun invoke()
-}
-class Listener {
-   fun setOnClickListener(r: SuspendRunnable) {
-       GlobalScope.launch { r.invoke() }
-   }
-}
-class Button(private val listener: Listener) {
-   fun process() {
-       listener.setOnClickListener {
-           addText()
-       }
-   }
-   suspend fun addText() {
-       // ...
-   }
-}
-```
-{kotlin-runnable="true" kotlin-min-compiler-version="1.5"}
+* If you need a distinct instance each time, for example for each registration, use an object expression or create an
+  instance of a class explicitly.
+* If you need to refer to the same instance later, for example to remove a listener, store it in a variable.
 
 You can also use [SAM conversions for Java interfaces](java-interop.md#sam-conversions).
 
+### Pass callable references to SAM parameters
+
+If the required behavior already exists as a named function, you can pass a [callable reference](lambdas.md#callable-reference).
+Kotlin adapts a compatible callable reference to the expected functional interface:
+
+```kotlin
+fun interface Action {
+    fun run()
+}
+
+fun execute(action: Action) {
+    action.run()
+}
+
+fun start() {
+    println("Run from a callable reference")
+}
+
+fun main() {
+    // Kotlin converts the lambda to an Action instance
+    execute { start() }
+    // Run from a callable reference
+
+    // Kotlin adapts the reference to an Action instance
+    execute(::start)
+    // Run from a callable reference
+}
+```
+{kotlin-runnable="true"}
+
+The lambda in execute `{ start() }` is a function literal, so Kotlin uses SAM conversion to create an `Action` instance.
+In `execute(::start)`, `::start` is a callable reference to the existing `start()` function. Because `execute()` expects
+an `Action`, the compiler creates a compatible `Action` instance that uses `start()` as the implementation of `Action.run()`.
+This process is called _SAM adaptation_.
+
+## Migration from an interface with constructor function to a functional interface
+
+Starting from 1.6.20, Kotlin supports callable references to functional interface constructors, which
+adds a source-compatible way to migrate from an interface with a constructor function to a functional interface.
+Consider the following code:
+
+```kotlin
+interface Printer { 
+    fun print() 
+}
+
+fun Printer(block: () -> Unit): Printer = object : Printer {
+    override fun print() = block()
+}
+```
+
+With callable references to functional interface constructors enabled, this code can be replaced with just a functional interface declaration:
+
+```kotlin
+fun interface Printer { 
+    fun print()
+}
+```
+
+Its constructor will be created implicitly, and any code using the `::Printer` function reference will compile. For example:
+
+```kotlin
+documentsStorage.addPrinter(::Printer)
+```
+
+Preserve the binary compatibility by marking the legacy function `Printer` with the [`@Deprecated`](https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-deprecated/)
+annotation with `DeprecationLevel.HIDDEN`:
+
+```kotlin
+@Deprecated(message = "Your message about the deprecation", level = DeprecationLevel.HIDDEN)
+fun Printer(...) {...}
+```
+
 ## Functional interfaces vs. type aliases
 
-Functional interfaces and [type aliases](type-aliases.md) serve different purposes. Type aliases are just names for
-existing types – they don't create a new type, while functional interfaces do.
+You can also simply rewrite the above using a [type alias](type-aliases.md) for a functional type:
 
-Type aliases can have only one member, while functional interfaces can have multiple non-abstract members and one abstract member.
+```kotlin
+typealias IntPredicate = (i: Int) -> Boolean
+
+val isEven: IntPredicate = { it % 2 == 0 }
+
+fun main() {
+    println("Is 7 even? - ${isEven(7)}")
+}
+```
+
+However, functional interfaces and [type aliases](type-aliases.md) serve different purposes.
+Type aliases are just names for existing types – they don't create a new type, while functional interfaces do.
+You can provide extensions that are specific to a particular functional interface to be inapplicable for plain functions or their type aliases.
+
+Type aliases can have only one member, while functional interfaces can have multiple non-abstract member functions and one abstract member function.
 Functional interfaces can also implement and extend other interfaces.
 
-Considering the above, functional interfaces are more flexible and provide more capabilities than type aliases.
+Functional interfaces are more flexible and provide more capabilities than type aliases, but they can be more costly both syntactically and at runtime because they can require conversions to a specific interface.
+When you choose which one to use in your code, consider your needs:
+* If your API needs to accept a function (any function) with some specific parameter and return types – use a simple functional type or define a type alias to give a shorter name to the corresponding functional type.
+* If your API accepts a more complex entity than a function – for example, it has non-trivial contracts and/or operations on it that can't be expressed in a functional type's signature – declare a separate functional interface for it.
